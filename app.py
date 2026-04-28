@@ -10,7 +10,7 @@ def _load_backend():
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Hate Speech Detector",
-    page_icon="🛡️",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -42,10 +42,9 @@ st.markdown("""
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 SENTENCE_LENGTH = 20
-LABELS      = {0: "Hate Speech", 1: "Offensive Language", 2: "Neither"}
+LABELS = {0: "Hate Speech", 1: "Offensive Language", 2: "Neither"}
 BADGE_CLASS = {0: "badge-hate", 1: "badge-offensive", 2: "badge-neither"}
-EMOJI       = {0: "🚨", 1: "⚠️", 2: "✅"}
-COLOR       = {0: "#ff4757", 1: "#ffa502", 2: "#2ed573"}
+COLOR = {0: "#ff4757", 1: "#ffa502", 2: "#2ed573"}
 
 # ── Load everything once ──────────────────────────────────────────────────────
 @st.cache_resource
@@ -55,7 +54,7 @@ def load_resources():
     from tensorflow.keras.preprocessing.sequence import pad_sequences
 
     spacy = _load_backend()
-    nlp   = spacy.load("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
     model = tf.keras.models.load_model("hate_speech.keras")
 
     with open("tokenizer.json", "r") as f:
@@ -67,14 +66,12 @@ def load_resources():
 def classify(text: str):
     model, nlp, tokenizer, pad_sequences = load_resources()
 
-    # Mirror training preprocessing exactly
     text = re.sub(r"[^a-zA-Z]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     text = " ".join(t.lemma_ for t in nlp(text))
     text = " ".join(t.text for t in nlp(text) if not t.is_stop)
 
-    # Use the saved tokenizer — same vocab as training
-    seq    = tokenizer.texts_to_sequences([text])
+    seq = tokenizer.texts_to_sequences([text])
     padded = pad_sequences(seq, padding="pre", maxlen=SENTENCE_LENGTH)
 
     probs = model.predict(np.array(padded), verbose=0)[0]
@@ -87,153 +84,146 @@ if "counts" not in st.session_state:
     st.session_state.counts = {0: 0, 1: 0, 2: 0}
 
 # ── Boot ──────────────────────────────────────────────────────────────────────
-with st.spinner("Loading model…"):
+with st.spinner("Loading model..."):
     try:
         load_resources()
         model_ok = True
     except FileNotFoundError as e:
         model_ok = False
-        missing = str(e)
-        load_err = missing
+        load_err = str(e)
     except Exception as e:
         model_ok = False
         load_err = str(e)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("##Hate Speech Detector")
+    st.markdown("## Hate Speech Detector")
     st.markdown("---")
     st.markdown("### How it works")
     st.markdown("""
-1. **Clean** – strips non-alpha characters  
-2. **Lemmatise** – reduces words to root form  
-3. **Stop-word removal** – drops filler words  
-4. **Tokenize** – words → consistent vocab IDs  
-5. **Padding** – fixed-length sequences  
-6. **LSTM RNN** – predicts category  
+1. Clean  
+2. Lemmatise  
+3. Stop-word removal  
+4. Tokenize  
+5. Padding  
+6. LSTM RNN  
 """)
+
     st.markdown("---")
     st.markdown("### Categories")
-    st.markdown("🚨 **Hate Speech** – targeted hatred")
-    st.markdown("⚠️ **Offensive Language** – profane but not hateful")
-    st.markdown("✅ **Neither** – clean or neutral")
+    st.markdown("Hate Speech")
+    st.markdown("Offensive Language")
+    st.markdown("Neither")
+
     st.markdown("---")
     st.markdown("### Session Stats")
+
     total = sum(st.session_state.counts.values())
+
     for cls, label in LABELS.items():
         cnt = st.session_state.counts[cls]
         pct = (cnt / total * 100) if total else 0
-        st.markdown(f"{EMOJI[cls]} **{label}**: {cnt} ({pct:.0f}%)")
-    if st.button("🗑️ Clear History"):
+        st.markdown(f"**{label}**: {cnt} ({pct:.0f}%)")
+
+    if st.button("Clear History"):
         st.session_state.history = []
-        st.session_state.counts  = {0: 0, 1: 0, 2: 0}
+        st.session_state.counts = {0: 0, 1: 0, 2: 0}
         st.rerun()
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-st.markdown("# 🛡️ Hate Speech Detection")
+st.markdown("# Hate Speech Detection")
 st.markdown("Paste any text below and the LSTM model will classify it in real-time.")
 
 if not model_ok:
-    st.error(f"❌ Failed to load: `{load_err}`")
-    if "tokenizer.json" in load_err:
-        st.markdown("""
-### Missing `tokenizer.json` — run this in Colab to generate it:
-```python
-from tensorflow.keras.preprocessing.text import Tokenizer
-import json
-
-tokenizer = Tokenizer(num_words=10000)
-tokenizer.fit_on_texts(df['final_tweet'])  # your preprocessed column
-
-with open('tokenizer.json', 'w') as f:
-    f.write(tokenizer.to_json())
-```
-Download `tokenizer.json` and place it in the same folder as `app.py`.
-""")
+    st.error(f"Failed to load: {load_err}")
     st.stop()
 
 col_input, col_result = st.columns([3, 2], gap="large")
 
 with col_input:
     st.markdown('<div class="card">', unsafe_allow_html=True)
+
     if "_ex" not in st.session_state:
         st.session_state["_ex"] = ""
 
     user_text = st.text_area(
         "Enter text to analyse",
         value=st.session_state["_ex"],
-        placeholder="Type or paste a tweet / sentence here…",
+        placeholder="Type or paste text here...",
         height=160,
         label_visibility="collapsed",
     )
+
     c1, c2 = st.columns(2)
-    analyse_btn = c1.button("🔍 Analyse", use_container_width=True)
-    if c2.button("📋 Try Example", use_container_width=True):
+
+    analyse_btn = c1.button("Analyse", use_container_width=True)
+
+    if c2.button("Try Example", use_container_width=True):
         import random
         examples = [
             "You people are disgusting and don't deserve to live here.",
             "This damn weather is really screwing up my plans today.",
-            "The weather today is beautiful and I feel great!",
+            "The weather today is beautiful and I feel great!"
         ]
         st.session_state["_ex"] = random.choice(examples)
         st.rerun()
+
     wc = len(user_text.split()) if user_text.strip() else 0
     st.caption(f"Words: {wc} | Characters: {len(user_text)}")
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with col_result:
     st.markdown('<div class="card-highlight">', unsafe_allow_html=True)
+
     if analyse_btn and user_text.strip():
         pred, probs = classify(user_text)
+
         st.session_state.counts[pred] += 1
+
         st.session_state.history.insert(0, {
-            "text": user_text[:120] + ("…" if len(user_text) > 120 else ""),
+            "text": user_text[:120],
             "pred": pred,
-            "probs": probs.tolist(),
+            "probs": probs.tolist()
         })
-        st.markdown(f"### {EMOJI[pred]} Result")
-        st.markdown(f'<span class="{BADGE_CLASS[pred]}">{LABELS[pred].upper()}</span>', unsafe_allow_html=True)
+
+        st.markdown("### Result")
+        st.markdown(
+            f'<span class="{BADGE_CLASS[pred]}">{LABELS[pred].upper()}</span>',
+            unsafe_allow_html=True
+        )
+
         st.markdown("---")
-        st.markdown("**Confidence scores**")
+        st.markdown("**Confidence Scores**")
+
         for cls in range(3):
             pct = float(probs[cls]) * 100
-            st.markdown(f'<div class="conf-label">{EMOJI[cls]} {LABELS[cls]}: {pct:.1f}%</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="conf-label">{LABELS[cls]}: {pct:.1f}%</div>',
+                unsafe_allow_html=True
+            )
             st.progress(float(probs[cls]))
-        st.markdown("---")
-        if pred == 0:
-            st.error("⚠️ This text contains **hate speech** targeting individuals or groups.")
-        elif pred == 1:
-            st.warning("ℹ️ This text uses **offensive language** but may not constitute hate speech.")
-        else:
-            st.success("✔️ This text appears **neutral or inoffensive**.")
+
     elif analyse_btn:
         st.info("Please enter some text first.")
-    else:
-        st.markdown("### 👆 Enter text and click Analyse")
-        st.markdown("Results and confidence scores will appear here.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
-total = sum(st.session_state.counts.values())
-if total:
-    st.markdown("---")
-    st.markdown("### 📊 Session Overview")
-    m1, m2, m3, m4 = st.columns(4)
-    tiles = [(total, "Total Analysed"), (st.session_state.counts[0], "🚨 Hate Speech"),
-             (st.session_state.counts[1], "⚠️ Offensive"), (st.session_state.counts[2], "✅ Clean")]
-    for col, (val, lbl) in zip([m1, m2, m3, m4], tiles):
-        col.markdown(f'<div class="metric-tile"><div class="metric-value">{val}</div><div class="metric-label">{lbl}</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown("### Enter text and click Analyse")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ── History ───────────────────────────────────────────────────────────────────
 if st.session_state.history:
     st.markdown("---")
-    st.markdown("### 🕓 Analysis History")
+    st.markdown("### Analysis History")
+
     for item in st.session_state.history[:10]:
         pred = item["pred"]
         conf = max(item["probs"]) * 100
+
         st.markdown(
             f'<div class="hist-item">'
-            f'<span style="color:{COLOR[pred]};font-weight:700;">{EMOJI[pred]} {LABELS[pred]}</span>'
+            f'<span style="color:{COLOR[pred]};font-weight:700;">{LABELS[pred]}</span>'
             f' <span style="color:#666;font-size:0.8rem;">({conf:.0f}% confidence)</span><br>'
             f'<span style="color:#a0a3b1;">{item["text"]}</span></div>',
             unsafe_allow_html=True,
@@ -241,4 +231,7 @@ if st.session_state.history:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown('<p style="text-align:center;color:#555;font-size:0.8rem;">Powered by an LSTM-based RNN trained on Twitter data &nbsp;|&nbsp; ~90% accuracy &nbsp;|&nbsp; 3-class classification</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p style="text-align:center;color:#555;font-size:0.8rem;">Powered by LSTM RNN | 3-class classification</p>',
+    unsafe_allow_html=True
+)
