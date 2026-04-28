@@ -1,14 +1,11 @@
 import streamlit as st
-import pickle
 import numpy as np
 import re
 
 # ── Backend (kept internal) ───────────────────────────────────────────────────
 def _load_backend():
     import spacy
-    from tensorflow.keras.preprocessing.text import one_hot
-    from tensorflow.keras.preprocessing.sequence import pad_sequences
-    return spacy, one_hot, pad_sequences
+    return spacy
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -43,8 +40,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Constants (must match training) ──────────────────────────────────────────
-VOCAB_SIZE      = 10000
+# ── Constants ─────────────────────────────────────────────────────────────────
 SENTENCE_LENGTH = 20
 LABELS      = {0: "Hate Speech", 1: "Offensive Language", 2: "Neither"}
 BADGE_CLASS = {0: "badge-hate", 1: "badge-offensive", 2: "badge-neither"}
@@ -55,19 +51,32 @@ COLOR       = {0: "#ff4757", 1: "#ffa502", 2: "#2ed573"}
 @st.cache_resource
 def load_resources():
     import tensorflow as tf
-    spacy, one_hot, pad_sequences = _load_backend()
+    from tensorflow.keras.preprocessing.text import tokenizer_from_json
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+    spacy = _load_backend()
     nlp   = spacy.load("en_core_web_sm")
-    model = tf.keras.models.load_model("hate_speech_detection_model.keras")
-    return model, nlp, one_hot, pad_sequences
+    model = tf.keras.models.load_model("hate_speech.keras")
+
+    with open("tokenizer.json", "r") as f:
+        tokenizer = tokenizer_from_json(f.read())
+
+    return model, nlp, tokenizer, pad_sequences
 
 # ── Classify ──────────────────────────────────────────────────────────────────
 def classify(text: str):
-    model, nlp, one_hot, pad_sequences = load_resources()
+    model, nlp, tokenizer, pad_sequences = load_resources()
+
+    # Mirror training preprocessing exactly
     text = re.sub(r"[^a-zA-Z]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     text = " ".join(t.lemma_ for t in nlp(text))
     text = " ".join(t.text for t in nlp(text) if not t.is_stop)
-    padded = pad_sequences([one_hot(text, VOCAB_SIZE)], padding="pre", maxlen=SENTENCE_LENGTH)
+
+    # Use the saved tokenizer — same vocab as training
+    seq    = tokenizer.texts_to_sequences([text])
+    padded = pad_sequences(seq, padding="pre", maxlen=SENTENCE_LENGTH)
+
     probs = model.predict(np.array(padded), verbose=0)[0]
     return int(np.argmax(probs)), probs
 
@@ -82,20 +91,24 @@ with st.spinner("Loading model…"):
     try:
         load_resources()
         model_ok = True
+    except FileNotFoundError as e:
+        model_ok = False
+        missing = str(e)
+        load_err = missing
     except Exception as e:
         model_ok = False
         load_err = str(e)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🛡️ Hate Speech Detector")
+    st.markdown("##Hate Speech Detector")
     st.markdown("---")
     st.markdown("### How it works")
     st.markdown("""
 1. **Clean** – strips non-alpha characters  
 2. **Lemmatise** – reduces words to root form  
 3. **Stop-word removal** – drops filler words  
-4. **One-hot encoding** – words → numbers  
+4. **Tokenize** – words → consistent vocab IDs  
 5. **Padding** – fixed-length sequences  
 6. **LSTM RNN** – predicts category  
 """)
@@ -121,13 +134,21 @@ st.markdown("# 🛡️ Hate Speech Detection")
 st.markdown("Paste any text below and the LSTM model will classify it in real-time.")
 
 if not model_ok:
-    st.error(f"❌ Could not load **hate_speech.keras**.\n\n`{load_err}`")
-    st.markdown("""
-**Make sure you've exported the model from Colab first:**
+    st.error(f"❌ Failed to load: `{load_err}`")
+    if "tokenizer.json" in load_err:
+        st.markdown("""
+### Missing `tokenizer.json` — run this in Colab to generate it:
 ```python
-model.save("hate_speech.keras")
+from tensorflow.keras.preprocessing.text import Tokenizer
+import json
+
+tokenizer = Tokenizer(num_words=10000)
+tokenizer.fit_on_texts(df['final_tweet'])  # your preprocessed column
+
+with open('tokenizer.json', 'w') as f:
+    f.write(tokenizer.to_json())
 ```
-Then place `hate_speech.keras` in the same folder as this script and restart.
+Download `tokenizer.json` and place it in the same folder as `app.py`.
 """)
     st.stop()
 
@@ -135,8 +156,12 @@ col_input, col_result = st.columns([3, 2], gap="large")
 
 with col_input:
     st.markdown('<div class="card">', unsafe_allow_html=True)
+    if "_ex" not in st.session_state:
+        st.session_state["_ex"] = ""
+
     user_text = st.text_area(
         "Enter text to analyse",
+        value=st.session_state["_ex"],
         placeholder="Type or paste a tweet / sentence here…",
         height=160,
         label_visibility="collapsed",
@@ -152,8 +177,6 @@ with col_input:
         ]
         st.session_state["_ex"] = random.choice(examples)
         st.rerun()
-    if "_ex" in st.session_state:
-        user_text = st.session_state.pop("_ex")
     wc = len(user_text.split()) if user_text.strip() else 0
     st.caption(f"Words: {wc} | Characters: {len(user_text)}")
     st.markdown('</div>', unsafe_allow_html=True)
